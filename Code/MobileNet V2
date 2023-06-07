@@ -1,0 +1,285 @@
+'''Importing the necessary packages and libraries for MobileNetV2'''
+import numpy as np
+import pandas as pd
+import random
+from tensorflow.keras.preprocessing import image
+from tensorflow.keras.utils import to_categorical
+from keras.applications.mobilenet import MobileNet, preprocess_input
+from tensorflow.keras.applications.mobilenet_v2 import MobileNetV2
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dropout, Dense,BatchNormalization, Flatten, MaxPool2D
+from keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau, Callback
+from keras.layers import Conv2D, Reshape
+from tensorflow.keras.utils import Sequence
+from keras.backend import epsilon
+import tensorflow as tf
+from sklearn.model_selection import train_test_split
+import matplotlib.pyplot as plt
+import seaborn as sns
+from tensorflow.keras.layers import GlobalAveragePooling2D
+from tensorflow.keras.optimizers import Adam
+import cv2
+
+from sklearn.metrics import classification_report, confusion_matrix, roc_curve
+from sklearn import metrics
+
+import os
+
+import warnings
+warnings.filterwarnings('ignore')
+
+folder_path = "/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/"
+
+train_dir = "/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train"
+train_class=os.listdir(train_dir)
+print(train_class)
+
+
+test_dir = "/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/test"
+test_class=os.listdir(test_dir)
+print(test_class)
+
+x=[] # array value of the images
+y=[] # the labels of the images
+
+for folder in os.listdir(train_dir):
+    image_list=os.listdir(train_dir+"/"+folder)
+    for img_name in image_list:
+        # Loading images
+        img=image.load_img(train_dir+"/"+folder+"/"+img_name,target_size=(224,224))
+        img=image.img_to_array(img)
+        
+        # Transfer Learning: Preprocess of MobileNetV2 model to our images before passing it to MobileNetV2
+        img=preprocess_input(img)
+        
+        x.append(img) # appending image array
+        y.append(train_class.index(folder)) # appending class index to the array
+        
+print("Preparing Training Dataset Completed.")
+
+test_images=[]
+test_images_Original=[]
+test_image_label=[]
+
+for folder in os.listdir(test_dir):
+    image_list=os.listdir(test_dir+"/"+folder)
+    for img_name in image_list:
+        # Loading images
+        img=image.load_img(test_dir+"/"+folder+"/"+img_name,target_size=(224,224))
+        
+        # Converting to arrarys
+        img=image.img_to_array(img)
+        
+        # Saving original images, will be used just for display at the end
+        test_images_Original.append(img.copy())
+        img=preprocess_input(img) 
+        
+        # Appending arrays
+        test_images.append(img)
+        test_image_label.append(test_class.index(folder))
+
+print("Preparing Test Dataset Completed.")
+
+# Training Dataset
+print("Training Dataset")
+
+x=np.array(x) # Converting to np arrary to pass to the model
+print(x.shape)
+
+y=to_categorical(y) # onehot encoding of the labels
+# print(y)
+print(y.shape)
+
+print("Testing Dataset")
+
+test_images=np.array(test_images) 
+print(test_images.shape)
+
+test_image_label=to_categorical(test_image_label) # onehot encoding of the labels)
+print(test_image_label.shape)
+
+#Data Distribution
+import plotly.express as px
+
+def walk_data(mydict, folder_path):
+    for (root,dirs,files) in os.walk(folder_path, topdown=False):
+        if len(files)>0:
+            mydict[root]=len(files)
+
+train_dict = dict()
+val_dict = dict()
+walk_data(train_dict, folder_path + "train/")
+walk_data(val_dict, folder_path + "test/")
+
+def fix_keys(mydict):
+    new_dict = dict()
+    for k, v in mydict.items():
+        new_k = k.split('/')[-1]
+        new_dict[new_k] = v
+    return new_dict
+
+train_dict = fix_keys(train_dict)
+val_dict = fix_keys(val_dict)
+print(train_dict)
+print(val_dict)
+
+label_train_dict = {'Fatigue Levels':train_dict.keys(), 'Count':train_dict.values}
+label_val_dict = {'Fatigue Levels':val_dict.keys(), 'Count':val_dict.values}
+
+def plot_dist(my_dict, data):
+    fig = px.bar(x=my_dict.values(),
+             y=my_dict.keys(),
+             orientation='h',
+             color=my_dict.values(),
+             title=data + ' Distribution',
+             opacity=0.8,
+             color_discrete_sequence=px.colors.diverging.curl,
+             template='plotly_dark'
+            )
+    fig.update_xaxes()
+    fig.show()
+
+plot_dist(train_dict, "Training data")
+print('\n')
+plot_dist(val_dict, "Validation data")
+
+xtrain, xval, ytrain, yval = train_test_split(x,y,test_size=0.2,random_state=5)
+print("Splitting data for train and validation completed.")
+
+rand_images1 = random.sample(os.listdir("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train/alert"), 8)
+rand_images2 = random.sample(os.listdir("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train/non_vigilant"), 8)
+rand_images3 = random.sample(os.listdir("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train/tired"), 8)
+
+print("Random Images for Alert Class")
+fig = plt.figure(figsize=(8,8))
+for i, im in enumerate(rand_images1):
+    plt.subplot(2,4 , i+1)
+    im = cv2.imread(os.path.join("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train/alert", im))
+    plt.imshow(im)
+    plt.axis('off')
+plt.tight_layout()
+plt.show()
+
+print("\nRandom Images for Non-Vigilant Class")
+fig = plt.figure(figsize=(8,8))
+for i, im in enumerate(rand_images2):
+    plt.subplot(2,4 , i+1)
+    im = cv2.imread(os.path.join("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train/non_vigilant", im))
+    plt.imshow(im)
+    plt.axis('off')
+plt.tight_layout()
+plt.show()
+
+print("\nRandom Images for Tired Class")
+fig = plt.figure(figsize=(8,8))
+for i, im in enumerate(rand_images3):
+    plt.subplot(2,4 , i+1)
+    im = cv2.imread(os.path.join("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/train/tired", im))
+    plt.imshow(im)
+    plt.axis('off')
+plt.tight_layout()
+plt.show()
+
+mnet = MobileNetV2(include_top = False, weights = "imagenet" ,input_shape=(224,224,3))
+
+tf.keras.backend.clear_session()
+
+model = Sequential([mnet,
+                    GlobalAveragePooling2D(),
+                    Dense(512, activation = "ReLU"),
+                    BatchNormalization(),
+                    Dropout(0.3),
+                    Dense(128, activation = "ReLU"),
+                    Dropout(0.1),
+                    Dense(32, activation = "ReLU"),
+                    Dropout(0.3),
+                    Dense(3, activation = "sigmoid")])
+
+model.layers[0].trainable = False
+
+model.compile(loss="categorical_crossentropy", optimizer="Adam", metrics="accuracy")
+
+model.summary()
+
+import tensorflow as tf
+import plotly.express as px
+import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+from sklearn.metrics import roc_curve, auc, multilabel_confusion_matrix
+
+
+import keras.backend as K
+from tensorflow.keras.preprocessing.image import load_img, img_to_array
+from keras.utils.vis_utils import plot_model
+from keras.models import Sequential
+from keras.layers import Dense, Dropout, GlobalMaxPooling2D
+from tensorflow.keras.optimizers import Adam, SGD
+from tensorflow.keras.applications import ResNet50
+from sklearn.model_selection   import train_test_split
+from keras.preprocessing.image import ImageDataGenerator
+
+plot_model(model, to_file='mobilenet_model_plot.png', show_shapes=True, show_layer_names=True)
+
+def scheduler(epoch):
+    if epoch <= 2:
+        return 0.001
+    elif epoch > 2 and epoch <= 15:
+        return 0.0001 
+    else:
+        return 0.00001
+
+lr_callbacks = tf.keras.callbacks.LearningRateScheduler(scheduler)
+
+EPOCHS = 100
+hist = model.fit(xtrain, ytrain, epochs=EPOCHS, callbacks=[lr_callbacks], validation_data=(xval,yval))
+
+# loss
+plt.plot(hist.history['loss'], label='train loss')
+plt.plot(hist.history['val_loss'], label='val loss')
+plt.legend()
+plt.show()
+#plt.savefig('LossVal_loss_eff')
+
+# accuracy
+plt.plot(hist.history['accuracy'], label='train acc')
+plt.plot(hist.history['val_accuracy'], label='val acc')
+plt.legend()
+plt.show()
+#plt.savefig('AccVal_acc_eff')
+
+def predict(img_name, model):
+    img=image.load_img(img_name,target_size=(224,224))
+    img=image.img_to_array(img)
+    plt.imshow(img.astype('int32'))
+    plt.show()
+    img=preprocess_input(img)
+    prediction=model.predict(img.reshape(1,224,224,3))
+    output=np.argmax(prediction)
+    print(train_class[output])
+
+
+# This function plots the image supplied in array
+def plot_image(i, predictions_array, true_label, img):
+    predictions_array, true_label, img = predictions_array[i], true_label[i], img[i]
+    plt.grid(False)
+    plt.xticks([])
+    plt.yticks([])
+    plt.imshow(img.astype('int32'))
+    predicted_label=np.argmax(predictions_array)
+    true_label=np.argmax(true_label)
+
+# Preparing prediction arrary
+predictions=[]
+
+for img in test_images:
+    img=img.reshape(1,224,224,3)
+    predictions.append(model.predict(img))
+
+pred_labels = model.predict(test_images)
+
+predict("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/test/alert/001_frame7.jpg",model)
+
+predict("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/test/non_vigilant/510_frame22.jpg",model)
+
+predict("/content/drive/MyDrive/Colab Notebooks/Raw Dataset for MobileNet/test/tired/1040_frame12.jpg",model)
